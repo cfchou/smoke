@@ -20,6 +20,7 @@ libraryDependencies ++= Seq(
   "io.netty" % "netty" % "3.7.0.Final",
   "com.typesafe" % "config" % "1.2.0",
   "com.typesafe.akka" %% "akka-actor" % "2.3.2",
+  "com.typesafe.akka" %% "akka-testkit" % "2.3.2",
   "org.scalatest" %% "scalatest" % "2.1.3" % "test"
 )
 

@@ -11,3 +11,4 @@ config.sqlite
 .settings
 .ensime
 *.sc
+*.iml
