@@ -1,7 +1,6 @@
 package smoke.akkaio
 
 import smoke._
-import smoke.netty.ConfigHelpers
 import java.net.InetSocketAddress
 import scala.concurrent.{ExecutionContext, Future}
 import akka.actor._
@@ -9,6 +8,7 @@ import akka.io.{Tcp, IO}
 import akka.io.Tcp._
 import com.typesafe.config.{ConfigFactory, Config}
 import scala.Some
+import smoke.netty.ConfigHelpers
 
 
 class ServerController(implicit val config: Config, ec: ExecutionContext)
@@ -17,7 +17,7 @@ class ServerController(implicit val config: Config, ec: ExecutionContext)
 
   override def setApplication(application: (Request) => Future[Response]): Unit = ???
 
-  override def start(): Unit =  AkkaServer.start
+  override def start(): Unit =  AkkaServer.start(None)
   override def stop(): Unit = AkkaServer.stop
 }
 
@@ -31,15 +31,16 @@ object AkkaServer {
 
   private var system: Option[ActorSystem] = None
 
-  def start(implicit config: Config, ec: ExecutionContext): Unit = {
+  def start(config: Option[Config]): Unit = {
     system = system.fold({
       /*
       custom Config will be sandwiched between the default(reference.conf) and
       the override(application.conf).
        */
-      Some(ActorSystem("SmokingServer", ConfigFactory.load(config)))
+      Some(ActorSystem("SmokingServer"))
     })(Some(_))
-    val server = system.get.actorOf(Props[AkkaServer], "AkkaServer")
+    val server = system.get.actorOf(Props(classOf[AkkaServer], config),
+      "AkkaServer")
     server ! Start
   }
 
@@ -49,14 +50,13 @@ object AkkaServer {
     })
   }
 
-  //def props(config: Config): Props = Props(classOf[AkkaServer], config)
 }
 
 /*
 AkkServer has one or more listeners as children. They're under default
 supervisor strategy which is most of time to restart on one-for-one basis.
  */
-class AkkaServer(implicit val config: Config)
+class AkkaServer(val config: Option[Config])
   extends Actor
   with ActorLogging
   with ConfigHelpers {
@@ -76,8 +76,13 @@ class AkkaServer(implicit val config: Config)
 
   override def receive: Actor.Receive = {
     case AkkaServer.Start =>
-      config.getScalaIntList("http.ports").foreach({ port =>
-        context.system.actorOf(ConnListener.props(port))
+      log.info("AkkaServer.Start")
+      val c = config.foldLeft(ConfigFactory.load)({ (c0, c1) =>
+        c1.withFallback(c0)
+      })
+      c.getScalaIntList("http.ports").foreach({ port =>
+        log.info(s"actorOf(ConnListener) at $port")
+        context.actorOf(ConnListener.props(port))
       })
   }
 }
@@ -103,16 +108,23 @@ class ConnListener(private val port: Int)
 
   @scala.throws[Exception](classOf[Exception])
   override def preStart(): Unit = {
+    super.preStart()
      /* TODO:
       * SSL support
      */
-    log.info("(Re)Starting ConnListener")
+    log.info(s"ConnListener.preStart at $port")
     IO(Tcp) ! Bind(self, new InetSocketAddress(port))
+  }
+
+  @scala.throws[Exception](classOf[Exception])
+  override def postStop(): Unit = {
+    super.postStop()
+    log.info(s"ConnListener.postStop at $port")
   }
 
   override def receive: Receive = {
     case Bound(local) =>
-      log.info("Bound to port " + local.getPort)
+      log.info(s"Bound to port ${local.getPort}")
 
     case CommandFailed(Bind(_, local, _, _, _)) =>
       log.error(s"Can't not bind $local")
