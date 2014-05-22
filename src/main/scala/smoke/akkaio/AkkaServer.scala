@@ -101,7 +101,7 @@ class ConnListener(private val port: Int)
   implicit val system = context.system
   //implicit val ec: ExecutionContext = context.system.dispatcher
 
-  // don't recover broken connections(one-for-one, Stop)
+  // don't recover terminated children(one-for-one, Stop)
   override def supervisorStrategy: SupervisorStrategy =
     SupervisorStrategy.stoppingStrategy
 
@@ -152,12 +152,15 @@ class HttpConnectionHandler(private val connection: ActorRef,
   extends Actor
   with ActorLogging {
 
-  // terminates if connection breaks
+  // terminate if connection breaks
   context watch connection
 
   override def receive: Actor.Receive = {
     case _: Tcp.ConnectionClosed =>
     case Tcp.Received(data) =>
+    case _: Terminated =>
+      log.error("Terminate because the watched counterpart terminated.")
+      context stop self
   }
 }
 
